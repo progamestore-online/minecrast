@@ -1,0 +1,33 @@
+{
+  "name": "prominecrast",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Voxel block-building game with multiplayer for ProGameStore — Minecraft-style creative building in your browser.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/progamestore-online/minecrast.git"
+  },
+  "homepage": "https://minecrast.progamestore.online",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @prominecrast/web dev",
+    "build": "pnpm --filter @prominecrast/web build",
+    "test": "pnpm --filter @prominecrast/web test",
+    "preview": "pnpm --filter @prominecrast/web preview",
+    "deploy": "pnpm build && wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260519.1",
+    "wrangler": "^4.87.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "brace-expansion@>=5.0.0 <5.0.6": ">=5.0.6",
+      "ws@>=8.0.0 <8.20.1": ">=8.20.1"
+    }
+  }
+}
