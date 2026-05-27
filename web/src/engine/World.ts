@@ -1,8 +1,6 @@
-/**
- * Voxel world data structure.
- * Stores blocks in a flat array indexed by (x, y, z).
- * Block type 0 = air, 1 = grass, 2 = dirt, 3 = stone, 4 = wood, 5 = sand.
- */
+export const TRANSPARENT_BLOCKS = new Set([0, 6, 7, 10, 16, 19]) // air, water, leaves, glass, torch, ladder
+export const NON_SOLID_BLOCKS = new Set([0, 6, 16]) // air, water, torch (walkable-through)
+
 export class World {
   readonly width: number
   readonly height: number
@@ -34,15 +32,20 @@ export class World {
     this.blocks[this.index(x, y, z)] = blockType
   }
 
-  /**
-   * Check if a face at (x,y,z) in direction (nx,ny,nz) is exposed (neighbor is air).
-   */
-  isFaceExposed(x: number, y: number, z: number, nx: number, ny: number, nz: number): boolean {
-    const neighbor = this.getBlock(x + nx, y + ny, z + nz)
-    return neighbor === 0
+  isSolid(x: number, y: number, z: number): boolean {
+    return !NON_SOLID_BLOCKS.has(this.getBlock(x, y, z))
   }
 
-  /** Iterate over all non-air blocks */
+  isFaceExposed(x: number, y: number, z: number, nx: number, ny: number, nz: number): boolean {
+    const self = this.getBlock(x, y, z)
+    const neighbor = this.getBlock(x + nx, y + ny, z + nz)
+    if (neighbor === 0) return true
+    if (TRANSPARENT_BLOCKS.has(self) && !TRANSPARENT_BLOCKS.has(neighbor)) return false
+    if (TRANSPARENT_BLOCKS.has(self) && self === neighbor) return false
+    if (!TRANSPARENT_BLOCKS.has(self) && TRANSPARENT_BLOCKS.has(neighbor)) return true
+    return false
+  }
+
   forEachBlock(callback: (x: number, y: number, z: number, blockType: number) => void): void {
     for (let z = 0; z < this.depth; z++) {
       for (let y = 0; y < this.height; y++) {
@@ -52,5 +55,13 @@ export class World {
         }
       }
     }
+  }
+
+  getHighestSolidBlock(x: number, z: number): number {
+    for (let y = this.height - 1; y >= 0; y--) {
+      const b = this.getBlock(x, y, z)
+      if (b !== 0 && !NON_SOLID_BLOCKS.has(b)) return y
+    }
+    return -1
   }
 }

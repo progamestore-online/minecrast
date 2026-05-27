@@ -1,5 +1,7 @@
+import * as THREE from 'three'
 import type { World } from './engine/World.ts'
 import type { Renderer } from './engine/Renderer.ts'
+import { createPlayerModel, createNametag, disposePlayerModel } from './engine/PlayerModel.ts'
 
 interface InitMessage {
   type: 'init'
@@ -36,16 +38,21 @@ interface PlayerLeftMessage {
 
 type ServerMessage = InitMessage | BlockUpdateMessage | PlayerMovedMessage | PlayerJoinedMessage | PlayerLeftMessage
 
-/**
- * WebSocket client for multiplayer world synchronization.
- * Connects to the WorldDO Durable Object and syncs block changes in real time.
- */
+interface RemotePlayer {
+  group: THREE.Group
+  targetPos: THREE.Vector3
+  lastPos: THREE.Vector3
+}
+
 export class MultiplayerClient {
   private ws: WebSocket | null = null
   private world: World
   private renderer: Renderer
   private playerId: number = 0
   private roomId: string
+  private players: Map<number, RemotePlayer> = new Map()
+  private positionInterval: number = 0
+  onPlayerCount: ((count: number) => void) | null = null
 
   constructor(roomId: string, world: World, renderer: Renderer) {
     this.roomId = roomId
@@ -61,7 +68,10 @@ export class MultiplayerClient {
     this.ws = new WebSocket(url)
 
     this.ws.addEventListener('open', () => {
-      console.log('[multiplayer] connected to world', this.roomId)
+      this.positionInterval = window.setInterval(() => {
+        const pos = this.renderer.camera.position
+        this.sendPosition({ x: pos.x, y: pos.y, z: pos.z })
+      }, 100)
     })
 
     this.ws.addEventListener('message', (e) => {
@@ -71,11 +81,11 @@ export class MultiplayerClient {
     })
 
     this.ws.addEventListener('close', () => {
-      console.log('[multiplayer] disconnected')
+      this.cleanup()
     })
 
     this.ws.addEventListener('error', () => {
-      console.error('[multiplayer] connection error')
+      this.cleanup()
     })
   }
 
@@ -83,14 +93,16 @@ export class MultiplayerClient {
     switch (msg.type) {
       case 'init':
         this.playerId = msg.playerId
-        // Apply any block changes from the server that differ from our local terrain
         for (const block of msg.blocks) {
           this.world.setBlock(block.x, block.y, block.z, block.blockType)
         }
         if (msg.blocks.length > 0) {
           this.renderer.rebuildMesh()
         }
-        console.log(`[multiplayer] joined as player ${this.playerId}, ${msg.players.length} others online`)
+        for (const player of msg.players) {
+          this.addPlayer(player.id, player.position)
+        }
+        this.emitPlayerCount()
         break
 
       case 'block_update':
@@ -101,17 +113,92 @@ export class MultiplayerClient {
         break
 
       case 'player_joined':
-        console.log(`[multiplayer] player ${msg.playerId} joined`)
+        this.addPlayer(msg.playerId, msg.position)
+        this.emitPlayerCount()
         break
 
       case 'player_left':
-        console.log(`[multiplayer] player ${msg.playerId} left`)
+        this.removePlayer(msg.playerId)
+        this.emitPlayerCount()
         break
 
       case 'player_moved':
-        // Future: render other players' positions
+        if (msg.playerId !== this.playerId) {
+          this.updatePlayerPosition(msg.playerId, msg.position)
+        }
         break
     }
+  }
+
+  private addPlayer(id: number, position: { x: number; y: number; z: number }): void {
+    if (this.players.has(id)) return
+
+    const group = createPlayerModel(id)
+    const tag = createNametag(`Player ${id}`)
+    group.add(tag)
+    group.position.set(position.x, position.y - 0.8, position.z)
+    this.renderer.scene.add(group)
+
+    this.players.set(id, {
+      group,
+      targetPos: new THREE.Vector3(position.x, position.y - 0.8, position.z),
+      lastPos: new THREE.Vector3(position.x, position.y - 0.8, position.z),
+    })
+  }
+
+  private removePlayer(id: number): void {
+    const player = this.players.get(id)
+    if (player) {
+      this.renderer.scene.remove(player.group)
+      disposePlayerModel(player.group)
+      this.players.delete(id)
+    }
+  }
+
+  private updatePlayerPosition(id: number, position: { x: number; y: number; z: number }): void {
+    let player = this.players.get(id)
+    if (!player) {
+      this.addPlayer(id, position)
+      player = this.players.get(id)
+      if (!player) return
+    }
+
+    player.lastPos.copy(player.group.position)
+    player.targetPos.set(position.x, position.y - 0.8, position.z)
+  }
+
+  update(): void {
+    for (const [, player] of this.players) {
+      // Smooth interpolation toward target
+      player.group.position.lerp(player.targetPos, 0.25)
+
+      // Face movement direction
+      const dx = player.targetPos.x - player.group.position.x
+      const dz = player.targetPos.z - player.group.position.z
+      if (Math.abs(dx) > 0.01 || Math.abs(dz) > 0.01) {
+        player.group.rotation.y = Math.atan2(dx, dz)
+      }
+
+      // Simple walk animation — swing arms and legs
+      const moving = player.group.position.distanceTo(player.targetPos) > 0.05
+      if (moving) {
+        const t = performance.now() * 0.008
+        const swing = Math.sin(t) * 0.4
+        // Arms are children 3 and 4, legs are 5 and 6
+        if (player.group.children[3]) player.group.children[3].rotation.x = swing
+        if (player.group.children[4]) player.group.children[4].rotation.x = -swing
+        if (player.group.children[5]) player.group.children[5].rotation.x = -swing
+        if (player.group.children[6]) player.group.children[6].rotation.x = swing
+      } else {
+        for (let i = 3; i <= 6; i++) {
+          if (player.group.children[i]) player.group.children[i].rotation.x = 0
+        }
+      }
+    }
+  }
+
+  private emitPlayerCount(): void {
+    this.onPlayerCount?.(this.players.size)
   }
 
   sendPlaceBlock(x: number, y: number, z: number, blockType: number): void {
@@ -132,7 +219,18 @@ export class MultiplayerClient {
     }
   }
 
+  private cleanup(): void {
+    if (this.positionInterval) {
+      clearInterval(this.positionInterval)
+      this.positionInterval = 0
+    }
+    for (const [id] of this.players) {
+      this.removePlayer(id)
+    }
+  }
+
   disconnect(): void {
+    this.cleanup()
     if (this.ws) {
       this.ws.close()
       this.ws = null

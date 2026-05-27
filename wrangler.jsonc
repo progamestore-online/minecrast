@@ -17,9 +17,9 @@
     "bindings": [{ "name": "WORLD", "class_name": "WorldDO" }]
   },
 
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WorldDO"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WorldDO"] }]
 
-  "routes": [
-    { "pattern": "minecrast.progamestore.online", "zone_name": "progamestore.online", "custom_domain": true }
-  ]
+  // Route managed by PGS admin Worker (pgs publish). Do not add routes
+  // here — the local token doesn't have zone permissions.
+  // Live: https://minecrast.progamestore.online
 }
