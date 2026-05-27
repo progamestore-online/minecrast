@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 interface TextItem {
   id: number
@@ -19,9 +19,9 @@ export function useFloatingTexts() {
     return () => clearInterval(interval)
   }, [])
 
-  const addText = (text: string, color = 'text-green-400') => {
+  const addText = useCallback((text: string, color = 'text-green-400') => {
     setTexts(prev => [...prev, { id: nextId++, text, color, timestamp: Date.now() }])
-  }
+  }, [])
 
   return { texts, addText }
 }

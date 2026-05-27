@@ -187,7 +187,7 @@ export default function App() {
       engine.dispose()
       engineRef.current = null
     }
-  }, [inGame, roomId, themeId])
+  }, [inGame, roomId, themeId, addText])
 
   if (!inGame) return <Menu onStart={startGame} hasSave={hasSave} error={error} />
 
